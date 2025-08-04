@@ -11,7 +11,7 @@ const TurndownService = require('turndown')
 /**
  * Main WordPress endpoint.
  */
-const wpEndpoint = `https://mywebsite.com/wp-json/wp/v2/`
+const wpEndpoint = `https://pointme.dev-serv.net/wp-json/wp/v2/`
 
 /**
  * API Endpoints that we'd like to receive data from
@@ -28,9 +28,9 @@ let wpData = {
  * Contentful API requirements
  */
 const ctfData = {
-  accessToken: '[ACCESS_TOKEN]',
-  environment: '[ENVIRONMENT_ID]',
-  spaceId: '[SPACE_ID]'
+  accessToken: 'TOKEN',
+  environment: 'master',
+  spaceId: 'SPACEID'
 }
 Object.freeze(ctfData);
 
@@ -216,14 +216,19 @@ function getPostBodyImages(postData) {
       }
     })[0];
 
-    bodyImages.push({
-      link: mediaObj.source_url,
-      description: mediaObj.alt_text,
-      title:  mediaObj.alt_text,
-      mediaId: mediaObj.id,
-      postId: mediaObj.post,
-      featured: true
-    })
+    // Add null check for mediaObj
+    if (mediaObj) {
+      bodyImages.push({
+        link: mediaObj.source_url,
+        description: mediaObj.alt_text,
+        title: mediaObj.alt_text,
+        mediaId: mediaObj.id,
+        postId: mediaObj.post,
+        featured: true
+      })
+    } else {
+      console.log(`Warning: Featured media with ID ${postData.featured_media} not found for post: ${postData.slug}`)
+    }
   }
 
   while (foundImage = imageRegex.exec(postData.content.rendered)) {
@@ -321,13 +326,13 @@ function buildContentfulAssets(environment) {
     for (const [imgIndex, contentImage] of wpPost.contentImages.entries()) {
       let assetObj = {
         title: {
-          'en-GB': contentImage.title
+          'en-US': contentImage.title
         },
         description: {
-          'en-GB': contentImage.description
+          'en-US': contentImage.description
         },
         file: {
-          'en-GB': {
+          'en-US': {
             contentType: 'image/jpeg',
             fileName: contentImage.link.split('/').pop(),
             upload: encodeURI(contentImage.link)
@@ -373,7 +378,7 @@ function getAndStoreAssets(environment, assets) {
       // console.log(result)
       contentfulData.assets = []
       for (const item of result.data.items) {
-        contentfulData.assets.push(item.fields.file['en-GB'].url)
+        contentfulData.assets.push(item.fields.file['en-US'].url)
       }
 
       createContentfulPosts(environment, assets)
@@ -399,7 +404,7 @@ function createContentfulAssets(environment, promises, assets) {
     promises.map((asset, index) => new Promise(async resolve => {
 
       let newAsset
-      // console.log(`Creating: ${post.slug['en-GB']}`)
+      // console.log(`Creating: ${post.slug['en-US']}`)
       setTimeout(() => {
         try {
           newAsset = environment.createAsset({
@@ -408,10 +413,10 @@ function createContentfulAssets(environment, promises, assets) {
           .then((asset) => asset.processForAllLocales())
           .then((asset) => asset.publish())
           .then((asset) => {
-            console.log(`Published Asset: ${asset.fields.file['en-GB'].fileName}`);
+            console.log(`Published Asset: ${asset.fields.file['en-US'].fileName}`);
             assets.push({
               assetId: asset.sys.id,
-              fileName: asset.fields.file['en-GB'].fileName
+              fileName: asset.fields.file['en-US'].fileName
             })
           })
         } catch (error) {
@@ -440,10 +445,10 @@ function createContentfulPosts(environment, assets) {
    *
    * Results:
    *  postTitle: {
-   *    'en-GB': wpPost.postTitle
+   *    'en-US': wpPost.postTitle
    *   },
    *  slug: {
-   *    'en-GB': wpPost.slug
+   *    'en-US': wpPost.slug
    *  },
    */
   let promises = []
@@ -469,7 +474,7 @@ function createContentfulPosts(environment, assets) {
 
       if (!keysToSkip.includes(postKey)) {
         postFields[postKey] = {
-          'en-GB': postValue
+          'en-US': postValue
         }
       }
 
@@ -481,7 +486,7 @@ function createContentfulPosts(environment, assets) {
         })[0];
 
         postFields.featuredImage = {
-          'en-GB': {
+          'en-US': {
             sys: {
               type: 'Link',
               linkType: 'Asset',
@@ -520,7 +525,7 @@ function createContentfulEntries(environment, promises) {
 
     let newPost
 
-    console.log(`Attempting: ${post.slug['en-GB']}`)
+    console.log(`Attempting: ${post.slug['en-US']}`)
 
     setTimeout(() => {
       try {
@@ -529,7 +534,7 @@ function createContentfulEntries(environment, promises) {
         })
         .then((entry) => entry.publish())
         .then((entry) => {
-          console.log(`Success: ${entry.fields.slug['en-GB']}`)
+          console.log(`Success: ${entry.fields.slug['en-US']}`)
         })
       } catch (error) {
         throw(Error(error))
