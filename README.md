@@ -62,6 +62,7 @@ This script will run in the terminal via Node. You need to have [npm installed](
     categories: getPostLabels(postData.categories, 'categories'),
     contentImages: getPostBodyImages(postData)
  }
+ ```
 
 6. **Run the migration**
    ```bash
