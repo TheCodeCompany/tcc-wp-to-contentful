@@ -5,6 +5,7 @@
   "main": "migration.js",
   "scripts": {
     "setup": "cp config.template.js config.js && echo '✅ Configuration file created! Please edit config.js with your credentials.'",
+    "validate": "node validate-config.js",
     "migrate": "node migration.js",
     "start": "node migration.js"
   },
