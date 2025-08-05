@@ -11,38 +11,75 @@ https://ashcroft.dev/blog/script-migrate-wordpress-posts-contentful/
 
 This script will run in the terminal via Node. You need to have [npm installed]('https://www.npmjs.com/get-npm').
 
-Steps to run:
-### Clone The Repo
+### Quick Setup
 
-`git clone git@github.com:jonashcroft/wp-to-contentful.git`
+1. **Clone the repository**
+   ```bash
+   git clone git@github.com:jonashcroft/wp-to-contentful.git
+   cd wp-to-contentful
+   ```
 
-Inside your new folder, install the packages required to run:
+2. **Install dependencies**
+   ```bash
+   npm install
+   ```
 
-```bash
-npm install contentful-management // Contentful Management API
-npm install axios // used to GET WordPress API data
-npm install fs // (optional) used to output a .json file of your WordPress posts.
-npm install turndown // used to convert WordPress post HTML into Markdown.
-```
+3. **Set up configuration**
+   ```bash
+   npm run setup
+   ```
+
+4. **Edit your configuration**
+   Open `config.js` and update with your WordPress and Contentful details.
+
+5. **Run the migration**
+   ```bash
+   npm run migrate
+   ```
+
+### Detailed Setup
 
 ### Add your details
 
-Open up `migration.js`, you'll need to make some modifcations:
+#### 1. Set up configuration file
 
-Replace the `wpEndpoint` variable with your own websites WP-JSON endpoint.
+Copy the configuration template to create your config file:
 
-In your Contentful admin panel, generate Content Management API keys, and insert your credentials in the `ctfData` object, as below:
-```javascript
-// Contentful API requirements
-const ctfData = {
-  accessToken: '[ACCESS_TOKEN]',
-  environment: '[ENVIRONMENT_ID]',
-  spaceId: '[SPACE_ID]'
-}
-Object.freeze(ctfData);
+```bash
+cp config.template.js config.js
 ```
 
-Locate the `fieldData` object in the  `mapData()` function, and replace the keys with your Contentful Content Model IDs and values with your WordPress fields. (detailed in the blog post)
+Open `config.js` and update it with your specific details:
+
+```javascript
+module.exports = {
+  // WordPress API Configuration
+  wordpress: {
+    endpoint: 'https://your-site.com/wp-json/wp/v2/', // Replace with your WordPress site
+    importPostCount: 2 // Number of posts to import (adjust as needed)
+  },
+
+  // Contentful Configuration
+  contentful: {
+    accessToken: 'CFPAT-your-contentful-access-token-here', // Your Content Management API token
+    spaceId: 'your-space-id-here', // Your Contentful space ID
+    environment: 'master', // Usually 'master' for production
+    contentType: 'blogPost' // Your content type ID in Contentful
+  }
+};
+```
+
+**Important**: The `config.js` file contains sensitive information and is excluded from version control. Never commit this file to your repository.
+
+#### 2. Get your Contentful credentials
+
+In your Contentful admin panel:
+1. Go to Settings → API keys
+2. Create or select a Content Management API key
+3. Copy the Space ID and Content Management Token
+4. Update your `config.js` file with these credentials
+
+#### 3. Customize field mapping (if needed)
 
 ```javascript
  let fieldData = {
@@ -61,7 +98,24 @@ Locate the `fieldData` object in the  `mapData()` function, and replace the keys
 ### Run the script
 
 ```bash
+npm run migrate
+# or
 node migration.js
 ```
+
+## Security Notes
+
+- **Never commit sensitive credentials to version control**
+- The `config.js` file is automatically excluded from git via `.gitignore`
+- Your Contentful access tokens provide full access to your space - keep them secure
+- Consider using environment variables in production environments
+
+## Configuration Files
+
+This project uses `config.js` to store sensitive configuration data. The following files are included:
+
+- `config.template.js` - Template with example values (safe to commit)
+- `config.js` - Your actual configuration (excluded from git)
+- `.env.example` - Alternative environment variable setup (if you prefer .env files)
 
 **IMPORTANT**: There is no sandbox or test environment with this script. If you run this script, it will immediately attempt to publish your new posts and assets - I am not responsible for anything that goes wrong.

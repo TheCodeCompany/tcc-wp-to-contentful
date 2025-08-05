@@ -2,4 +2,7 @@
 node_modules
 wpPosts.json
 posts.json
+config.js
 contentful-config.js
+.env
+.env.local

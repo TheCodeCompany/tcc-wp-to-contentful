@@ -3,6 +3,24 @@ const axios = require('axios')
 const fs = require('fs');
 const TurndownService = require('turndown')
 
+// Load configuration from external file
+let config;
+try {
+  config = require('./config');
+} catch (error) {
+  console.error('❌ Configuration file not found!');
+  console.error('Please copy config.template.js to config.js and fill in your credentials.');
+  console.error('Run: cp config.template.js config.js');
+  process.exit(1);
+}
+
+// Validate required configuration
+if (!config.contentful.accessToken || !config.contentful.spaceId || !config.wordpress.endpoint) {
+  console.error('❌ Missing required configuration values!');
+  console.error('Please check your config.js file and ensure all required fields are filled in.');
+  process.exit(1);
+}
+
 /**
  * Global variables that we're going use throughout this script
  * -----------------------------------------------------------------------------
@@ -11,7 +29,19 @@ const TurndownService = require('turndown')
 /**
  * Main WordPress endpoint.
  */
-const wpEndpoint = `https://pointme.dev-serv.net/wp-json/wp/v2/`
+const wpEndpoint = config.wordpress.endpoint
+
+/**
+ * Limit the number of posts to import
+ */
+const import_post_count = config.wordpress.importPostCount
+
+/**
+ * Contentful content type ID to create entries as
+ * Common content type names: 'blogPost', 'post', 'article', 'blog', 'page'
+ * You need to create this content type in Contentful first or use an existing one
+ */
+const contentful_content_type = config.contentful.contentType
 
 /**
  * API Endpoints that we'd like to receive data from
@@ -28,9 +58,9 @@ let wpData = {
  * Contentful API requirements
  */
 const ctfData = {
-  accessToken: 'TOKEN',
-  environment: 'master',
-  spaceId: 'SPACEID'
+  accessToken: config.contentful.accessToken,
+  environment: config.contentful.environment,
+  spaceId: config.contentful.spaceId
 }
 Object.freeze(ctfData);
 
@@ -120,7 +150,7 @@ function migrateContent() {
 
   // Loop over our content types and create API endpoint URLs
   for (const [key, value] of Object.entries(wpData)) {
-    let wpUrl = `${wpEndpoint}${key}?per_page=90`
+    let wpUrl = `${wpEndpoint}${key}?per_page=${import_post_count}`
     promises.push(wpUrl)
   }
 
@@ -220,8 +250,8 @@ function getPostBodyImages(postData) {
     if (mediaObj) {
       bodyImages.push({
         link: mediaObj.source_url,
-        description: mediaObj.alt_text,
-        title: mediaObj.alt_text,
+        description: mediaObj.alt_text || `Featured image for post ${postData.id}`,
+        title: mediaObj.alt_text || `Featured image for post ${postData.id}`,
         mediaId: mediaObj.id,
         postId: mediaObj.post,
         featured: true
@@ -232,10 +262,10 @@ function getPostBodyImages(postData) {
   }
 
   while (foundImage = imageRegex.exec(postData.content.rendered)) {
-    let alt = postData.id
+    let alt = `Image from post ${postData.id}`
 
     if (foundImage[0].includes('alt="')) {
-      alt = foundImage[0].split('alt="')[1].split('"')[0] || ''
+      alt = foundImage[0].split('alt="')[1].split('"')[0] || `Image from post ${postData.id}`
     }
 
     bodyImages.push({
@@ -253,6 +283,12 @@ function getPostLabels(postItems, labelType) {
   let labels = []
   let apiTag = getApiDataType(labelType)[0];
 
+  // Add safety check for apiTag
+  if (!apiTag || !apiTag.data) {
+    console.log(`Warning: No ${labelType} data found`);
+    return labels;
+  }
+
   for (const labelId of postItems) {
     let labelName = apiTag.data.filter(obj => {
       if (obj.id === labelId) {
@@ -260,7 +296,12 @@ function getPostLabels(postItems, labelType) {
       }
     });
 
-    labels.push(labelName[0].name)
+    // Add safety check for labelName array
+    if (labelName.length > 0 && labelName[0] && labelName[0].name) {
+      labels.push(labelName[0].name)
+    } else {
+      console.log(`Warning: ${labelType} with ID ${labelId} not found`);
+    }
   }
 
   return labels
@@ -304,12 +345,56 @@ function createForContentful() {
   ctfClient.getSpace(ctfData.spaceId)
   .then((space) => space.getEnvironment(ctfData.environment))
   .then((environment) => {
-    buildContentfulAssets(environment);
+    // First, let's check what content types exist
+    checkExistingContentTypes(environment);
   })
   .catch((error) => {
     console.log(error)
     return error
   })
+}
+
+/**
+ * Check what content types exist in the Contentful space
+ * @param {String} environment - name of Contentful environment.
+ */
+function checkExistingContentTypes(environment) {
+  console.log('Checking existing content types in Contentful space...')
+  
+  environment.getContentTypes()
+    .then((contentTypes) => {
+      console.log('Available content types:')
+      contentTypes.items.forEach((contentType) => {
+        console.log(`- ID: "${contentType.sys.id}", Name: "${contentType.name}"`)
+      })
+      
+      // Check if our desired content type exists
+      const targetContentType = contentTypes.items.find(ct => ct.sys.id === contentful_content_type)
+      
+      if (targetContentType) {
+        console.log(`✓ Content type "${contentful_content_type}" found. Proceeding with migration...`)
+        console.log(logSeparator)
+        buildContentfulAssets(environment);
+      } else {
+        console.log(`✗ Content type "${contentful_content_type}" not found!`)
+        console.log('\nYou need to either:')
+        console.log('1. Create a content type with the ID "' + contentful_content_type + '" in Contentful, or')
+        console.log('2. Change the contentful_content_type variable to one of the existing content types above')
+        console.log('\nIf creating a new content type, make sure to add these fields:')
+        console.log('- postTitle (Short text)')
+        console.log('- slug (Short text)')
+        console.log('- content (Long text)')
+        console.log('- publishDate (Date & time)')
+        console.log('- featuredImage (Media)')
+        console.log('- tags (Short text, list)')
+        console.log('- categories (Short text, list)')
+        console.log(logSeparator)
+        return;
+      }
+    })
+    .catch((error) => {
+      console.log('Error checking content types:', error)
+    })
 }
 
 /**
@@ -324,12 +409,16 @@ function buildContentfulAssets(environment) {
   // For every image in every post, create a new asset.
   for (let [index, wpPost] of wpData.posts.entries()) {
     for (const [imgIndex, contentImage] of wpPost.contentImages.entries()) {
+      // Ensure title and description are always strings
+      const title = typeof contentImage.title === 'string' ? contentImage.title : `Image ${imgIndex + 1} from ${wpPost.slug}`;
+      const description = typeof contentImage.description === 'string' ? contentImage.description : `Image ${imgIndex + 1} from ${wpPost.slug}`;
+      
       let assetObj = {
         title: {
-          'en-US': contentImage.title
+          'en-US': title
         },
         description: {
-          'en-US': contentImage.description
+          'en-US': description
         },
         file: {
           'en-US': {
@@ -459,7 +548,17 @@ function createContentfulPosts(environment, assets) {
     for (let [postKey, postValue] of Object.entries(post)) {
       // console.log(`postKey: ${postValue}`)
       if (postKey === 'content') {
+        // Keep content as plain text since the field expects RichText
+        // You may need to change the field type in Contentful to "Long text" instead of "RichText"
         postValue = turndownService.turndown(postValue)
+      }
+
+      // Handle tags and categories - convert arrays to comma-separated strings if needed
+      if (postKey === 'tags' || postKey === 'categories') {
+        if (Array.isArray(postValue)) {
+          // If the field expects a single Symbol, join the array into a string
+          postValue = postValue.join(', ')
+        }
       }
 
       /**
@@ -529,7 +628,7 @@ function createContentfulEntries(environment, promises) {
 
     setTimeout(() => {
       try {
-        newPost = environment.createEntry('blogPost', {
+        newPost = environment.createEntry(contentful_content_type, {
           fields: post
         })
         .then((entry) => entry.publish())

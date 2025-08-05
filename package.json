@@ -1,4 +1,13 @@
 {
+  "name": "wp-to-contentful-migration",
+  "version": "1.0.0",
+  "description": "A script to migrate posts from WordPress to Contentful",
+  "main": "migration.js",
+  "scripts": {
+    "setup": "cp config.template.js config.js && echo '✅ Configuration file created! Please edit config.js with your credentials.'",
+    "migrate": "node migration.js",
+    "start": "node migration.js"
+  },
   "dependencies": {
     "axios": "^1.11.0",
     "contentful-management": "^11.54.4",
