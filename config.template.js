@@ -29,6 +29,9 @@ module.exports = {
     // Content type ID to create entries as
     // Common content type names: 'blogPost', 'post', 'article', 'blog', 'page'
     // You need to create this content type in Contentful first or use an existing one
-    contentType: 'blogPost'
+    contentType: 'blogPost',
+    
+    // Content format - 'richtext' for RichText fields, 'markdown' for Long Text fields
+    contentFormat: 'richtext'
   }
 };
