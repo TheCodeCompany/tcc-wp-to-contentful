@@ -29,8 +29,18 @@ This script will run in the terminal via Node. You need to have [npm installed](
    npm run setup
    ```
 
-4. **Edit your configuration**
-   Open `config.js` and update with your WordPress and Contentful details.
+4. **Edit your configuration in relation to WP & Contentful**
+   Open `config.js` and update with:
+   a. WordPress:
+    - endpoint - Rest API endpoint of your WP site
+    - importPostCount - Number of posts to be processed when running your migrat script
+
+   b. Contentful:
+    - AccessToken - Get the API key from your Contentful https://www.contentful.com/developers/docs/concepts/apis/
+    - spaceId - YOu can get it from your App's URL https://www.contentful.com/help/spaces/find-space-id/
+    - environment - by default master
+    - contentType - blogPost is default but it varies in the your target Contentful site https://www.contentful.com/help/content-types/
+    - contentFormat - richtext is the default
 
 5. **Run the migration**
    ```bash
@@ -56,7 +66,7 @@ module.exports = {
   // WordPress API Configuration
   wordpress: {
     endpoint: 'https://your-site.com/wp-json/wp/v2/', // Replace with your WordPress site
-    importPostCount: 2 // Number of posts to import (adjust as needed)
+    importPostCount: 300 // Number of posts to import (adjust as needed)
   },
 
   // Contentful Configuration

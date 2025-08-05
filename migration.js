@@ -14,6 +14,9 @@ try {
   process.exit(1);
 }
 
+console.log('🚀 WordPress to Contentful Migration Script Starting...')
+console.log('📋 Configuration loaded successfully')
+
 // Validate required configuration
 if (!config.contentful.accessToken || !config.contentful.spaceId || !config.wordpress.endpoint) {
   console.error('❌ Missing required configuration values!');
@@ -27,6 +30,14 @@ if (!config.contentful.accessToken.startsWith('CFPAT-')) {
   console.error('Make sure you are using a Content Management API token (starts with CFPAT-)');
   console.error('Not a Content Delivery API token (starts with something else)');
   process.exit(1);
+}
+
+// Validate import post count
+if (config.wordpress.importPostCount > 100) {
+  console.log('⚠️  Large import detected!')
+  console.log(`   You've set importPostCount to ${config.wordpress.importPostCount}`)
+  console.log('   This might take a while and could hit API rate limits.')
+  console.log('   Consider starting with a smaller number (e.g., 10-50) for testing.')
 }
 
 /**
@@ -278,6 +289,84 @@ async function testContentfulConnection() {
   }
 }
 
+/**
+ * Fetch data with pagination support for large datasets
+ * WordPress typically limits per_page to 100, so we need to paginate for larger requests
+ */
+async function fetchDataWithPagination(baseUrl, totalItemsNeeded) {
+  const maxPerPage = 100; // WordPress default limit
+  let allData = [];
+  let page = 1;
+  let hasMorePages = true;
+  
+  console.log(`📡 Fetching up to ${totalItemsNeeded} items from: ${baseUrl}`)
+  
+  while (hasMorePages && allData.length < totalItemsNeeded) {
+    const itemsToFetch = Math.min(maxPerPage, totalItemsNeeded - allData.length);
+    const url = `${baseUrl}?per_page=${itemsToFetch}&page=${page}`;
+    
+    try {
+      console.log(`   📄 Page ${page}: requesting ${itemsToFetch} items...`);
+      const response = await axios.get(url);
+      
+      if (response.data.length === 0) {
+        hasMorePages = false;
+      } else {
+        allData = allData.concat(response.data);
+        console.log(`   ✅ Page ${page}: got ${response.data.length} items (total: ${allData.length})`);
+        page++;
+        
+        // Check if we've reached the total available (from headers)
+        const totalAvailable = response.headers['x-wp-total'] ? parseInt(response.headers['x-wp-total']) : null;
+        if (totalAvailable && allData.length >= totalAvailable) {
+          hasMorePages = false;
+        }
+      }
+    } catch (error) {
+      console.error(`   ❌ Page ${page} failed: ${error.response?.status} - ${error.message}`);
+      hasMorePages = false;
+    }
+  }
+  
+  console.log(`   📊 Total fetched: ${allData.length} items`);
+  return {
+    success: allData.length > 0,
+    data: allData,
+    error: allData.length === 0 ? 'No data retrieved' : null
+  };
+}
+
+/**
+ * Check how many posts are available in WordPress before starting migration
+ */
+async function checkWordPressPostCount() {
+  console.log('🔍 Checking WordPress post availability...')
+  
+  try {
+    // Use a small request to get headers with total counts
+    const response = await axios.get(`${wpEndpoint}posts?per_page=1`)
+    const totalPosts = response.headers['x-wp-total'] ? parseInt(response.headers['x-wp-total']) : 'unknown'
+    const totalPages = response.headers['x-wp-totalpages'] ? parseInt(response.headers['x-wp-totalpages']) : 'unknown'
+    
+    console.log(`📊 WordPress site stats:`)
+    console.log(`   Total published posts: ${totalPosts}`)
+    console.log(`   Total pages available: ${totalPages}`)
+    console.log(`   Requested to import: ${import_post_count}`)
+    
+    if (totalPosts !== 'unknown' && totalPosts < import_post_count) {
+      console.log(`⚠️  Note: You requested ${import_post_count} posts, but only ${totalPosts} are available.`)
+      console.log(`   The migration will process all ${totalPosts} available posts.`)
+    }
+    
+    if (import_post_count > 100) {
+      console.log(`📝 Large dataset detected - will use pagination to fetch ${import_post_count} posts`)
+    }
+    
+  } catch (error) {
+    console.log(`⚠️  Could not check post count (${error.message}), proceeding with migration...`)
+  }
+}
+
 function migrateContent() {
   let promises = [];
 
@@ -286,63 +375,98 @@ function migrateContent() {
   console.log(logSeparator)
 
   // First test the Contentful connection
-  testContentfulConnection().then(() => {
+  testContentfulConnection().then(async () => {
+    // Check WordPress post availability
+    await checkWordPressPostCount()
+    
     console.log(logSeparator)
     console.log(`📡 Getting WordPress API data`)
     console.log(logSeparator)
 
-    // Loop over our content types and create API endpoint URLs
-    for (const [key, value] of Object.entries(wpData)) {
-      let wpUrl = `${wpEndpoint}${key}?per_page=${import_post_count}`
-      promises.push(wpUrl)
+    // Use pagination for posts if needed, but keep smaller requests for other endpoints
+    const endpoints = Object.keys(wpData);
+    const fetchPromises = [];
+    
+    for (const endpoint of endpoints) {
+      if (endpoint === 'posts') {
+        // Use pagination for posts
+        fetchPromises.push(
+          fetchDataWithPagination(`${wpEndpoint}${endpoint}`, import_post_count)
+            .then(result => ({ ...result, endpoint }))
+        );
+      } else {
+        // Use standard fetch for other endpoints (tags, categories, media)
+        const maxItems = endpoint === 'media' ? 100 : 50; // Limit media to avoid large requests
+        fetchPromises.push(
+          fetchDataWithPagination(`${wpEndpoint}${endpoint}`, maxItems)
+            .then(result => ({ ...result, endpoint }))
+        );
+      }
     }
 
-    getAllData(promises)
-      .then(response =>{
-        apiData = response
+    Promise.all(fetchPromises)
+      .then(results => {
+        apiData = results;
         mapData();
-      }).catch(error => {
+      })
+      .catch(error => {
         console.error('❌ Error fetching WordPress data:', error.message)
         process.exit(1)
       })
   })
 }
 
-function getAllData(URLs){
-  return Promise.all(URLs.map(fetchData));
-}
-
-function fetchData(URL) {
-  return axios
-    .get(URL)
-    .then(function(response) {
-      return {
-        success: true,
-        endpoint: '',
-        data: response.data
-      };
-    })
-    .catch(function(error) {
-      return { success: false };
-    });
-}
-
 /**
  * Get our entire API response and filter it down to only show content that we want to include
  */
 function mapData() {
-  // Get WP posts from API object
-
-  // Loop over our conjoined data structure and append data types to each child.
-  for (const [index, [key, value]] of Object.entries(Object.entries(wpData))) {
-    apiData[index].endpoint = key
+  console.log('📊 Processing API response data...')
+  
+  // Check for any failed API calls
+  const failedCalls = apiData.filter(item => !item.success)
+  if (failedCalls.length > 0) {
+    console.log('⚠️  Some API calls failed:')
+    failedCalls.forEach(failed => {
+      console.log(`   - ${failed.endpoint}: ${failed.error}`)
+    })
   }
 
+  console.log(`📋 Successfully fetched data for: ${apiData.filter(item => item.success).map(item => item.endpoint).join(', ')}`)
+
   console.log(`Reducing API data to only include fields we want`)
-  let apiPosts = getApiDataType('posts')[0];
-  // Loop over posts - note: we probably /should/ be using .map() here.
+  
+  // Get posts data and validate it exists
+  let apiPostsArray = apiData.filter(item => item.endpoint === 'posts' && item.success);
+  if (!apiPostsArray || apiPostsArray.length === 0) {
+    console.error('❌ No posts data found in API response')
+    console.error('This could happen if:')
+    console.error('1. WordPress site has no published posts')
+    console.error('2. WordPress API is not accessible')
+    console.error('3. WordPress endpoint URL is incorrect')
+    process.exit(1)
+  }
+  
+  let apiPosts = apiPostsArray[0];
+  if (!apiPosts || !apiPosts.data || !Array.isArray(apiPosts.data)) {
+    console.error('❌ Posts data is malformed or empty')
+    console.error('API Posts Response:', apiPosts)
+    process.exit(1)
+  }
+
+  if (apiPosts.data.length === 0) {
+    console.log('⚠️  No posts found to migrate')
+    console.log('This could happen if:')
+    console.log('1. All posts are drafts or private')
+    console.log('2. The importPostCount is set too high')
+    console.log('3. WordPress has no published posts')
+    process.exit(0)
+  }
+
+  console.log(`📝 Found ${apiPosts.data.length} posts to process`)
+  
+  // Loop over posts
   for (let [key, postData] of Object.entries(apiPosts.data)) {
-    console.log(`Parsing ${postData.slug}`)
+    console.log(`   Parsing: ${postData.slug}`)
     /**
      * Create base object with only limited keys
      * (e.g. just 'slug', 'categories', 'title') etc.
@@ -367,7 +491,7 @@ function mapData() {
     wpData.posts.push(fieldData)
   }
 
-  console.log(`...Done!`)
+  console.log(`✅ Processed ${wpData.posts.length} posts successfully`)
   console.log(logSeparator)
 
   writeDataToFile(wpData, 'wpPosts');
@@ -455,10 +579,16 @@ function getPostLabels(postItems, labelType) {
  */
 function getApiDataType(resourceName) {
   let apiType = apiData.filter(obj => {
-    if (obj.endpoint === resourceName) {
+    if (obj && obj.endpoint === resourceName && obj.success) {
       return obj
     }
   });
+  
+  if (apiType.length === 0) {
+    console.log(`⚠️  No data found for resource type: ${resourceName}`)
+    return []
+  }
+  
   return apiType
 }
 
