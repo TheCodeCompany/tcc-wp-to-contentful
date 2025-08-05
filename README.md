@@ -30,7 +30,12 @@ This script will run in the terminal via Node. You need to have [npm installed](
    ```
 
 4. **Edit your configuration in relation to WP & Contentful**
-   Open `config.js` and update with:
+
+    In your Contentful admin panel:
+    1. Go to Settings → API keys
+    2. Create or select a Content Management API key
+    3. Copy the Space ID and Content Management Token``
+    4. Open `config.js` and update with:
    a. WordPress:
     - endpoint - Rest API endpoint of your WP site
     - importPostCount - Number of posts to be processed when running your migrat script
@@ -42,54 +47,7 @@ This script will run in the terminal via Node. You need to have [npm installed](
     - contentType - blogPost is default but it varies in the your target Contentful site https://www.contentful.com/help/content-types/
     - contentFormat - richtext is the default
 
-5. **Run the migration**
-   ```bash
-   npm run migrate
-   ```
-
-### Detailed Setup
-
-### Add your details
-
-#### 1. Set up configuration file
-
-Copy the configuration template to create your config file:
-
-```bash
-cp config.template.js config.js
-```
-
-Open `config.js` and update it with your specific details:
-
-```javascript
-module.exports = {
-  // WordPress API Configuration
-  wordpress: {
-    endpoint: 'https://your-site.com/wp-json/wp/v2/', // Replace with your WordPress site
-    importPostCount: 300 // Number of posts to import (adjust as needed)
-  },
-
-  // Contentful Configuration
-  contentful: {
-    accessToken: 'CFPAT-your-contentful-access-token-here', // Your Content Management API token
-    spaceId: 'your-space-id-here', // Your Contentful space ID
-    environment: 'master', // Usually 'master' for production
-    contentType: 'blogPost' // Your content type ID in Contentful
-  }
-};
-```
-
-**Important**: The `config.js` file contains sensitive information and is excluded from version control. Never commit this file to your repository.
-
-#### 2. Get your Contentful credentials
-
-In your Contentful admin panel:
-1. Go to Settings → API keys
-2. Create or select a Content Management API key
-3. Copy the Space ID and Content Management Token
-4. Update your `config.js` file with these credentials
-
-#### 3. Customize field mapping (if needed)
+5. Customize field mapping (if needed)
 
 ```javascript
  let fieldData = {
@@ -104,14 +62,12 @@ In your Contentful admin panel:
     categories: getPostLabels(postData.categories, 'categories'),
     contentImages: getPostBodyImages(postData)
  }
-```
-### Run the script
 
-```bash
-npm run migrate
-# or
-node migration.js
-```
+6. **Run the migration**
+   ```bash
+   npm run migrate
+   ```
+
 
 ## Security Notes
 
