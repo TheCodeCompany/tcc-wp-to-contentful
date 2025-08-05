@@ -21,6 +21,14 @@ if (!config.contentful.accessToken || !config.contentful.spaceId || !config.word
   process.exit(1);
 }
 
+// Validate access token format
+if (!config.contentful.accessToken.startsWith('CFPAT-')) {
+  console.error('❌ Invalid Contentful access token format!');
+  console.error('Make sure you are using a Content Management API token (starts with CFPAT-)');
+  console.error('Not a Content Delivery API token (starts with something else)');
+  process.exit(1);
+}
+
 /**
  * Global variables that we're going use throughout this script
  * -----------------------------------------------------------------------------
@@ -137,33 +145,167 @@ turndownService.addRule('replaceWordPressImages', {
 })
 
 /**
+ * Convert HTML content to Contentful RichText format
+ * @param {String} htmlContent - WordPress post content in HTML
+ */
+function convertToRichText(htmlContent) {
+  // Simple conversion - creates a basic RichText document with paragraphs
+  // This handles basic HTML to RichText conversion
+  
+  // Remove undefined image references and clean up content
+  let cleanContent = htmlContent.replace(/!\[.*?\]\(undefined\)/g, '')
+  
+  // Convert to markdown first to get clean text
+  const markdown = turndownService.turndown(cleanContent)
+  
+  // Split into paragraphs and process each one
+  const lines = markdown.split('\n').filter(line => line.trim().length > 0)
+  const content = []
+  
+  for (const line of lines) {
+    const trimmedLine = line.trim()
+    
+    if (trimmedLine.startsWith('# ')) {
+      // Heading 1
+      content.push({
+        nodeType: 'heading-1',
+        data: {},
+        content: [{
+          nodeType: 'text',
+          value: trimmedLine.substring(2),
+          marks: [],
+          data: {}
+        }]
+      })
+    } else if (trimmedLine.startsWith('## ')) {
+      // Heading 2
+      content.push({
+        nodeType: 'heading-2',
+        data: {},
+        content: [{
+          nodeType: 'text',
+          value: trimmedLine.substring(3),
+          marks: [],
+          data: {}
+        }]
+      })
+    } else if (trimmedLine.startsWith('### ')) {
+      // Heading 3
+      content.push({
+        nodeType: 'heading-3',
+        data: {},
+        content: [{
+          nodeType: 'text',
+          value: trimmedLine.substring(4),
+          marks: [],
+          data: {}
+        }]
+      })
+    } else if (trimmedLine.startsWith('> ')) {
+      // Blockquote
+      content.push({
+        nodeType: 'blockquote',
+        data: {},
+        content: [{
+          nodeType: 'paragraph',
+          data: {},
+          content: [{
+            nodeType: 'text',
+            value: trimmedLine.substring(2),
+            marks: [],
+            data: {}
+          }]
+        }]
+      })
+    } else if (trimmedLine.length > 0) {
+      // Regular paragraph
+      content.push({
+        nodeType: 'paragraph',
+        data: {},
+        content: [{
+          nodeType: 'text',
+          value: trimmedLine,
+          marks: [],
+          data: {}
+        }]
+      })
+    }
+  }
+  
+  return {
+    nodeType: 'document',
+    data: {},
+    content: content
+  }
+}
+
+/**
  * Main Migration Script.
  * -----------------------------------------------------------------------------
  */
+
+/**
+ * Test Contentful connection before starting migration
+ */
+async function testContentfulConnection() {
+  console.log('🔗 Testing Contentful connection...')
+  
+  try {
+    const space = await ctfClient.getSpace(ctfData.spaceId)
+    console.log(`✅ Connected to space: "${space.name}"`)
+    
+    const environment = await space.getEnvironment(ctfData.environment)
+    console.log(`✅ Connected to environment: "${environment.sys.id}"`)
+    
+    return environment
+  } catch (error) {
+    console.error('❌ Connection test failed:')
+    console.error('Status:', error.response?.status)
+    console.error('Message:', error.message)
+    
+    if (error.response?.status === 401) {
+      console.error('\n🔑 Authentication failed:')
+      console.error('- Check your access token in config.js')
+      console.error('- Make sure it\'s a Content Management API token (CFPAT-...)')
+      console.error('- Verify the token hasn\'t expired')
+    } else if (error.response?.status === 404) {
+      console.error('\n🔍 Resource not found:')
+      console.error('- Check your Space ID in config.js')
+      console.error('- Verify the environment name (usually "master")')
+    }
+    
+    process.exit(1)
+  }
+}
 
 function migrateContent() {
   let promises = [];
 
   console.log(logSeparator)
-  console.log(`Getting WordPress API data`)
+  console.log(`🚀 Starting WordPress to Contentful Migration`)
   console.log(logSeparator)
 
-  // Loop over our content types and create API endpoint URLs
-  for (const [key, value] of Object.entries(wpData)) {
-    let wpUrl = `${wpEndpoint}${key}?per_page=${import_post_count}`
-    promises.push(wpUrl)
-  }
+  // First test the Contentful connection
+  testContentfulConnection().then(() => {
+    console.log(logSeparator)
+    console.log(`📡 Getting WordPress API data`)
+    console.log(logSeparator)
 
-  // console.log(promises)
-  getAllData(promises)
-    .then(response =>{
-      apiData = response
+    // Loop over our content types and create API endpoint URLs
+    for (const [key, value] of Object.entries(wpData)) {
+      let wpUrl = `${wpEndpoint}${key}?per_page=${import_post_count}`
+      promises.push(wpUrl)
+    }
 
-      mapData();
-
-    }).catch(error => {
-      console.log(error)
-    })
+    getAllData(promises)
+      .then(response =>{
+        apiData = response
+        mapData();
+      }).catch(error => {
+        console.error('❌ Error fetching WordPress data:', error.message)
+        process.exit(1)
+      })
+  })
 }
 
 function getAllData(URLs){
@@ -342,15 +484,39 @@ function writeDataToFile(dataTree, dataType) {
  * Create Contentful Client.
  */
 function createForContentful() {
+  console.log('🔗 Connecting to Contentful...')
+  console.log(`Space ID: ${ctfData.spaceId}`)
+  console.log(`Environment: ${ctfData.environment}`)
+  
   ctfClient.getSpace(ctfData.spaceId)
-  .then((space) => space.getEnvironment(ctfData.environment))
+  .then((space) => {
+    console.log('✅ Successfully connected to Contentful space')
+    return space.getEnvironment(ctfData.environment)
+  })
   .then((environment) => {
+    console.log('✅ Successfully accessed environment')
     // First, let's check what content types exist
     checkExistingContentTypes(environment);
   })
   .catch((error) => {
-    console.log(error)
-    return error
+    console.error('❌ Error connecting to Contentful:')
+    console.error('Status:', error.response?.status)
+    console.error('Message:', error.message)
+    console.error('Details:', error.response?.data)
+    
+    if (error.response?.status === 401) {
+      console.error('\n🔑 Authentication Error - Check your access token:')
+      console.error('1. Make sure your access token is a Content Management API token (starts with CFPAT-)')
+      console.error('2. Verify the token has the correct permissions')
+      console.error('3. Check if the token is still valid (not expired)')
+    } else if (error.response?.status === 404) {
+      console.error('\n🔍 Not Found Error:')
+      console.error('1. Check if your Space ID is correct')
+      console.error('2. Verify the environment name (usually "master")')
+      console.error('3. Make sure you have access to this space')
+    }
+    
+    process.exit(1)
   })
 }
 
@@ -359,41 +525,49 @@ function createForContentful() {
  * @param {String} environment - name of Contentful environment.
  */
 function checkExistingContentTypes(environment) {
-  console.log('Checking existing content types in Contentful space...')
+  console.log('🔍 Checking existing content types in Contentful space...')
   
   environment.getContentTypes()
     .then((contentTypes) => {
-      console.log('Available content types:')
-      contentTypes.items.forEach((contentType) => {
-        console.log(`- ID: "${contentType.sys.id}", Name: "${contentType.name}"`)
-      })
+      console.log('📋 Available content types:')
+      if (contentTypes.items.length === 0) {
+        console.log('   No content types found in this space.')
+      } else {
+        contentTypes.items.forEach((contentType) => {
+          console.log(`   - ID: "${contentType.sys.id}", Name: "${contentType.name}"`)
+        })
+      }
       
       // Check if our desired content type exists
       const targetContentType = contentTypes.items.find(ct => ct.sys.id === contentful_content_type)
       
       if (targetContentType) {
-        console.log(`✓ Content type "${contentful_content_type}" found. Proceeding with migration...`)
+        console.log(`✅ Content type "${contentful_content_type}" found. Proceeding with migration...`)
         console.log(logSeparator)
         buildContentfulAssets(environment);
       } else {
-        console.log(`✗ Content type "${contentful_content_type}" not found!`)
-        console.log('\nYou need to either:')
+        console.log(`❌ Content type "${contentful_content_type}" not found!`)
+        console.log('\n📝 You need to either:')
         console.log('1. Create a content type with the ID "' + contentful_content_type + '" in Contentful, or')
-        console.log('2. Change the contentful_content_type variable to one of the existing content types above')
-        console.log('\nIf creating a new content type, make sure to add these fields:')
-        console.log('- postTitle (Short text)')
-        console.log('- slug (Short text)')
-        console.log('- content (Long text)')
-        console.log('- publishDate (Date & time)')
-        console.log('- featuredImage (Media)')
-        console.log('- tags (Short text, list)')
-        console.log('- categories (Short text, list)')
+        console.log('2. Change the contentType in your config.js to one of the existing content types above')
+        console.log('\n🔧 If creating a new content type, make sure to add these fields:')
+        console.log('   - postTitle (Short text)')
+        console.log('   - slug (Short text)')
+        console.log('   - content (Long text)')
+        console.log('   - publishDate (Date & time)')
+        console.log('   - featuredImage (Media - optional)')
+        console.log('   - tags (Short text, list - optional)')
+        console.log('   - categories (Short text, list - optional)')
         console.log(logSeparator)
-        return;
+        process.exit(1);
       }
     })
     .catch((error) => {
-      console.log('Error checking content types:', error)
+      console.error('❌ Error checking content types:')
+      console.error('Status:', error.response?.status)
+      console.error('Message:', error.message)
+      console.error('Details:', error.response?.data)
+      process.exit(1)
     })
 }
 
@@ -493,26 +667,37 @@ function createContentfulAssets(environment, promises, assets) {
     promises.map((asset, index) => new Promise(async resolve => {
 
       let newAsset
-      // console.log(`Creating: ${post.slug['en-US']}`)
+      console.log(`🖼️  Creating asset ${index + 1}/${promises.length}: ${asset.file['en-US'].fileName}`)
+      
       setTimeout(() => {
-        try {
-          newAsset = environment.createAsset({
-            fields: asset
+        environment.createAsset({
+          fields: asset
+        })
+        .then((asset) => {
+          console.log(`   ⏳ Processing: ${asset.fields.file['en-US'].fileName}`)
+          return asset.processForAllLocales()
+        })
+        .then((asset) => {
+          console.log(`   📤 Publishing: ${asset.fields.file['en-US'].fileName}`)
+          return asset.publish()
+        })
+        .then((asset) => {
+          console.log(`   ✅ Published: ${asset.fields.file['en-US'].fileName}`)
+          assets.push({
+            assetId: asset.sys.id,
+            fileName: asset.fields.file['en-US'].fileName
           })
-          .then((asset) => asset.processForAllLocales())
-          .then((asset) => asset.publish())
-          .then((asset) => {
-            console.log(`Published Asset: ${asset.fields.file['en-US'].fileName}`);
-            assets.push({
-              assetId: asset.sys.id,
-              fileName: asset.fields.file['en-US'].fileName
-            })
-          })
-        } catch (error) {
-          throw(Error(error))
-        }
-
-        resolve(newAsset)
+          resolve(asset)
+        })
+        .catch((error) => {
+          console.error(`   ❌ Failed to create asset: ${asset.file['en-US'].fileName}`)
+          console.error('   Error:', error.message)
+          if (error.response?.data) {
+            console.error('   Details:', error.response.data)
+          }
+          // Continue with other assets even if one fails
+          resolve(null)
+        })
       }, 1000 + (5000 * index));
     }))
   );
@@ -548,9 +733,16 @@ function createContentfulPosts(environment, assets) {
     for (let [postKey, postValue] of Object.entries(post)) {
       // console.log(`postKey: ${postValue}`)
       if (postKey === 'content') {
-        // Keep content as plain text since the field expects RichText
-        // You may need to change the field type in Contentful to "Long text" instead of "RichText"
-        postValue = turndownService.turndown(postValue)
+        // Handle content based on configuration
+        if (config.contentful.contentFormat === 'richtext') {
+          // Convert HTML to Contentful RichText format
+          postValue = convertToRichText(postValue)
+          console.log(`   📝 Converting content to RichText format`)
+        } else {
+          // Convert HTML to markdown for Long Text fields
+          postValue = turndownService.turndown(postValue)
+          console.log(`   📝 Converting content to Markdown format`)
+        }
       }
 
       // Handle tags and categories - convert arrays to comma-separated strings if needed
@@ -624,22 +816,29 @@ function createContentfulEntries(environment, promises) {
 
     let newPost
 
-    console.log(`Attempting: ${post.slug['en-US']}`)
+    console.log(`📝 Creating post ${index + 1}/${promises.length}: ${post.slug['en-US']}`)
 
     setTimeout(() => {
-      try {
-        newPost = environment.createEntry(contentful_content_type, {
-          fields: post
-        })
-        .then((entry) => entry.publish())
-        .then((entry) => {
-          console.log(`Success: ${entry.fields.slug['en-US']}`)
-        })
-      } catch (error) {
-        throw(Error(error))
-      }
-
-      resolve(newPost)
+      environment.createEntry(contentful_content_type, {
+        fields: post
+      })
+      .then((entry) => {
+        console.log(`   📤 Publishing: ${entry.fields.slug['en-US']}`)
+        return entry.publish()
+      })
+      .then((entry) => {
+        console.log(`   ✅ Success: ${entry.fields.slug['en-US']}`)
+        resolve(entry)
+      })
+      .catch((error) => {
+        console.error(`   ❌ Failed to create entry: ${post.slug['en-US']}`)
+        console.error('   Error:', error.message)
+        if (error.response?.data) {
+          console.error('   Details:', JSON.stringify(error.response.data, null, 2))
+        }
+        // Continue with other entries even if one fails
+        resolve(null)
+      })
     }, 1000 + (5000 * index));
   })));
 }
