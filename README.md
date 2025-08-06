@@ -5,9 +5,10 @@ This is forked from https://github.com/jonashcroft/wp-to-contentful.
 Basic WP to Contentful migration
 
 This only migrates:
-Post Title
-Slug
-Post Content
+
+ - Post Title
+ - Slug
+ - Post Content
 
 ## How to use the script
 
