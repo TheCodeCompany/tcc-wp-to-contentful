@@ -11,6 +11,7 @@ This only migrates:
  - Post Content and images in the contents
  - Featured Images 
 
+Still does not detect if the existing post is already importer and does not continue from where the import last stopped when the stript is re-run if it encounters an error mid-import.
 
 ## How to use the script
 
@@ -43,10 +44,12 @@ This script will run in the terminal via Node. You need to have [npm installed](
     4. Open `config.js` and update with:
 
       a. WordPress:
+
         - endpoint - Rest API endpoint of your WP site
         - importPostCount - Number of posts to be processed when running your migrat script
 
       b. Contentful:
+      
         - AccessToken - Get the API key from your Contentful https://www.contentful.com/developers/docs/concepts/apis/
         - spaceId - YOu can get it from your App's URL https://www.contentful.com/help/spaces/find-space-id/
         - environment - by default master
