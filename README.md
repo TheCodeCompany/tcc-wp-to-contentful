@@ -8,7 +8,9 @@ This only migrates:
 
  - Post Title
  - Slug
- - Post Content
+ - Post Content and images in the contents
+ - Featured Images 
+
 
 ## How to use the script
 
@@ -39,16 +41,18 @@ This script will run in the terminal via Node. You need to have [npm installed](
     2. Create or select a Content Management API key
     3. Copy the Space ID and Content Management Token``
     4. Open `config.js` and update with:
-   a. WordPress:
-    - endpoint - Rest API endpoint of your WP site
-    - importPostCount - Number of posts to be processed when running your migrat script
 
-   b. Contentful:
-    - AccessToken - Get the API key from your Contentful https://www.contentful.com/developers/docs/concepts/apis/
-    - spaceId - YOu can get it from your App's URL https://www.contentful.com/help/spaces/find-space-id/
-    - environment - by default master
-    - contentType - blogPost is default but it varies in the your target Contentful site https://www.contentful.com/help/content-types/
-    - contentFormat - richtext is the default
+      a. WordPress:
+        - endpoint - Rest API endpoint of your WP site
+        - importPostCount - Number of posts to be processed when running your migrat script
+
+      b. Contentful:
+        - AccessToken - Get the API key from your Contentful https://www.contentful.com/developers/docs/concepts/apis/
+        - spaceId - YOu can get it from your App's URL https://www.contentful.com/help/spaces/find-space-id/
+        - environment - by default master
+        - contentType - `blogPost` is default but it varies in the your target Contentful site https://www.contentful.com/help/content-types/
+        - contentFormat - richtext is the default
+        - importPostCount - batch count to process
 
 5. Customize field mapping (if needed)
 
