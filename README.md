@@ -1,11 +1,13 @@
 # A script to migrate posts from WordPress to Contentful.
 
-This is a script that will export all posts from WordPress using the Rest API and import them into Contentful using the Content Management API.
+This is forked from https://github.com/jonashcroft/wp-to-contentful.
 
-I've used this script for my own personal site and decided to share it and document my process used to develop it so people can learn from it. The basis of the script is intended to be expanded on for your own specifc purpose, but you can use the script as-is by modifying a few things.
+Basic WP to Contentful migration
 
-Full write-up can be found here:
-https://ashcroft.dev/blog/script-migrate-wordpress-posts-contentful/
+This only migrates:
+Post Title
+Slug
+Post Content
 
 ## How to use the script
 
@@ -15,7 +17,7 @@ This script will run in the terminal via Node. You need to have [npm installed](
 
 1. **Clone the repository**
    ```bash
-   git clone git@github.com:jonashcroft/wp-to-contentful.git
+   git clone git@github.com/TheCodeCompany/tcc-wp-to-contentful
    cd wp-to-contentful
    ```
 
